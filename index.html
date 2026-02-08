@@ -11,6 +11,7 @@
         body { font-family: 'Inter', sans-serif; }
         ::-webkit-scrollbar { height: 6px; width: 6px; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        .act-header { min-width: 120px; }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-900">
@@ -150,19 +151,19 @@
                     </div>
                 </div>
                 <div class="p-4 overflow-x-auto">
-                    <table class="w-full text-left min-w-[600px]">
+                    <table class="w-full text-left">
                         <thead>
                             <tr class="text-slate-400 text-[10px] uppercase tracking-widest">
-                                <th class="pb-4 w-40">Matériel</th>
+                                <th class="pb-6 w-48">Matériel</th>
                                 ${p.activities.map((a, aIdx) => `
-                                    <th class="pb-4 px-2 text-center">
-                                        <div class="group relative inline-block">
-                                            <span class="text-slate-700 text-xs font-bold">${a}</span>
-                                            <div class="hidden group-hover:flex absolute -top-8 left-1/2 -translate-x-1/2 bg-white shadow-xl rounded border p-1 gap-1 z-50 text-slate-900">
-                                                <button onclick="moveActivity(${pIdx}, ${aIdx}, -1)"><i data-lucide="chevron-left" size="14"></i></button>
-                                                <button onclick="removeActivity(${pIdx}, ${aIdx})" class="text-red-500"><i data-lucide="trash" size="12"></i></button>
-                                                <button onclick="moveActivity(${pIdx}, ${aIdx}, 1)"><i data-lucide="chevron-right" size="14"></i></button>
+                                    <th class="pb-6 px-2 text-center act-header">
+                                        <div class="flex flex-col items-center gap-2">
+                                            <div class="flex items-center gap-2 bg-slate-100 rounded-lg p-1">
+                                                <button onclick="moveActivity(${pIdx}, ${aIdx}, -1)" class="hover:text-blue-600"><i data-lucide="chevron-left" size="14"></i></button>
+                                                <button onclick="removeActivity(${pIdx}, ${aIdx})" class="hover:text-red-500"><i data-lucide="trash" size="12"></i></button>
+                                                <button onclick="moveActivity(${pIdx}, ${aIdx}, 1)" class="hover:text-blue-600"><i data-lucide="chevron-right" size="14"></i></button>
                                             </div>
+                                            <span class="text-slate-700 text-xs font-bold block w-full truncate">${a}</span>
                                         </div>
                                     </th>
                                 `).join('')}
@@ -172,8 +173,8 @@
                             ${p.items.map((item, iIdx) => `
                                 <tr class="group">
                                     <td class="py-4 font-semibold text-slate-700 flex items-center justify-between">
-                                        <span>${item.name}</span>
-                                        <button onclick="removeItem(${pIdx}, ${iIdx})" class="opacity-0 group-hover:opacity-100 text-red-300"><i data-lucide="x-circle" size="14"></i></button>
+                                        <span class="truncate pr-2">${item.name}</span>
+                                        <button onclick="removeItem(${pIdx}, ${iIdx})" class="opacity-0 group-hover:opacity-100 text-red-300 hover:text-red-500"><i data-lucide="x-circle" size="16"></i></button>
                                     </td>
                                     ${p.activities.map(act => {
                                         const times = item.assignments[act];
@@ -181,12 +182,15 @@
                                             <td class="py-4 px-2 text-center">
                                                 <div class="flex flex-col items-center gap-2">
                                                     <button onclick="toggleAssignment(${pIdx}, ${iIdx}, '${act}')" 
-                                                        class="w-8 h-8 rounded-lg flex items-center justify-center transition-all ${times ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-300'}">
-                                                        <i data-lucide="${times ? 'check' : 'plus'}" size="16"></i>
+                                                        class="w-9 h-9 rounded-xl flex items-center justify-center transition-all ${times ? 'bg-emerald-500 text-white shadow-md' : 'bg-slate-100 text-slate-300 hover:bg-slate-200'}">
+                                                        <i data-lucide="${times ? 'check' : 'plus'}" size="18"></i>
                                                     </button>
-                                                    ${times ? `<div class="space-y-1">
-                                                        ${times.map((t, tIdx) => `<input type="time" value="${t}" onchange="updateTime(${pIdx}, ${iIdx}, '${act}', ${tIdx}, this.value)" class="text-[10px] border rounded p-0.5">`).join('')}
-                                                        <button onclick="addTime(${pIdx}, ${iIdx}, '${act}')" class="text-[9px] text-blue-500 block w-full">+ Heure</button>
+                                                    ${times ? `<div class="space-y-1 w-full max-w-[90px]">
+                                                        ${times.map((t, tIdx) => `<div class="flex items-center gap-1 bg-white border rounded p-1 shadow-sm">
+                                                            <input type="time" value="${t}" onchange="updateTime(${pIdx}, ${iIdx}, '${act}', ${tIdx}, this.value)" class="text-[10px] w-full outline-none">
+                                                            <button onclick="removeTime(${pIdx}, ${iIdx}, '${act}', ${tIdx})" class="text-slate-300 hover:text-red-500"><i data-lucide="x" size="10"></i></button>
+                                                        </div>`).join('')}
+                                                        <button onclick="addTime(${pIdx}, ${iIdx}, '${act}')" class="text-[9px] text-blue-500 font-bold">+ HEURE</button>
                                                     </div>` : ''}
                                                 </div>
                                             </td>`;
@@ -194,7 +198,7 @@
                                 </tr>`).join('')}
                         </tbody>
                     </table>
-                    <button onclick="addItem(${pIdx})" class="mt-4 w-full py-2 border-2 border-dashed border-slate-200 rounded-xl text-slate-400 text-xs font-bold hover:bg-slate-50">+ AJOUTER MATÉRIEL</button>
+                    <button onclick="addItem(${pIdx})" class="mt-6 w-full py-3 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 text-xs font-bold hover:bg-slate-50 transition-all uppercase tracking-widest">+ Ajouter matériel</button>
                 </div>`;
             container.appendChild(card);
         });
