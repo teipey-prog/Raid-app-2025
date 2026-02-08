@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Planning Raid Dynamique</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        input[type="time"]::-webkit-calendar-picker-indicator { cursor: pointer; }
+        
+        @keyframes pulse-red {
+            0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            70% { transform: scale(1.05); box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+            100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+        .alert-active { animation: pulse-red 2s infinite; }
+        ::-webkit-scrollbar { height: 6px; width: 6px; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900">
+
+<div id="app" class="max-w-7xl mx-auto p-3 md:p-8">
+    <div id="internal-alert" class="hidden fixed top-4 right-4 z-[100] bg-red-600 text-white p-4 rounded-xl shadow-2xl flex items-center gap-4 border-2 border-white alert-active">
+        <div class="flex-1">
+            <p class="font-bold">⏰ ALERTE RAID !</p>
+            <p id="alert-msg" class="text-sm"></p>
+        </div>
+        <button onclick="closeAlert()" class="bg-white text-red-600 px-3 py-1 rounded font-bold">OK</button>
+    </div>
+
+    <header class="mb-6 flex flex-col gap-4 no-print">
+        <div class="flex justify-between items-start">
+            <div>
+                <h1 class="text-2xl md:text-3xl font-bold text-slate-800 flex items-center gap-2">
+                    <i data-lucide="zap" class="text-blue-600"></i> Raid Manager
+                </h1>
+                <p class="text-slate-500 text-sm italic">Personnalisé par participant</p>
+            </div>
+            <button onclick="shareConfig()" class="bg-blue-600 text-white p-2.5 rounded-xl hover:bg-blue-700 transition-all flex items-center gap-2 font-medium text-sm shadow-md">
+                <i data-lucide="share-2" size="18"></i> <span>Partager</span>
+            </button>
+        </div>
+        
+        <div class="flex flex-wrap gap-2">
+            <button onclick="addParticipant()" class="flex-1 md:flex-none flex items-center justify-center gap-2 bg-emerald-600 text-white px-4 py-2.5 rounded-xl hover:bg-emerald-700 transition-colors shadow-sm font-medium">
+                <i data-lucide="user-plus" size="18"></i> Nouveau Participant
+            </button>
+            <button onclick="requestNotificationPermission()" id="btn-notif" class="flex-1 md:flex-none flex items-center justify-center gap-2 bg-orange-500 text-white px-4 py-2.5 rounded-xl hover:bg-orange-600 transition-colors shadow-sm font-medium">
+                <i data-lucide="bell" size="18"></i> Alertes
+            </button>
+        </div>
+    </header>
+
+    <div id="participants-container" class="grid grid-cols-1 gap-8">
+        </div>
+</div>
+
+<script>
+    // --- Logique de données ---
+    function getInitialData() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const sharedData = urlParams.get('d');
+        if (sharedData) {
+            try { return JSON.parse(atob(sharedData)); } catch (e) { console.error("Erreur décodage"); }
+        }
+        return JSON.parse(localStorage.getItem('raid_v3_data')) || [
+            { id: crypto.randomUUID(), name: "Teïva", activities: ["Laser Run", "Hockey"], items: [{ id: crypto.randomUUID(), name: "A6700", assignments: {} }] }
+        ];
+    }
+
+    let participants = getInitialData();
+    let audioCtx = null;
+    let notifiedSlots = new Set();
+
+    function saveData() {
+        localStorage.setItem('raid_v3_data', JSON.stringify(participants));
+        updateURL();
+    }
+
+    function updateURL() {
+        const base64Data = btoa(JSON.stringify(participants));
+        const newUrl = `${window.location.protocol}//${window.location.host}${window.location.pathname}?d=${base64Data}`;
+        window.history.replaceState({ path: newUrl }, '', newUrl);
+    }
+
+    function shareConfig() {
+        updateURL();
+        navigator.clipboard.writeText(window.location.href);
+        alert("Lien copié ! Partagez ce lien pour transmettre tout le planning.");
+    }
+
+    // --- Actions Participants & Activités ---
+    function addParticipant() {
+        const name = prompt("Nom du participant ?");
+        if (name) { participants.push({ id: crypto.randomUUID(), name, activities: ["Activité 1"], items: [] }); saveData(); render(); }
+    }
+
+    function removeParticipant(pIdx) {
+        if(confirm(`Supprimer définitivement ${participants[pIdx].name} ?`)) { participants.splice(pIdx, 1); saveData(); render(); }
+    }
+
+    function addActivity(pIdx) {
+        const act = prompt("Nom de la nouvelle activité ?");
+        if (act) { participants[pIdx].activities.push(act); saveData(); render(); }
+    }
+
+    function removeActivity(pIdx, actIdx) {
+        const actName = participants[pIdx].activities[actIdx];
+        if(confirm(`Supprimer l'activité "${actName}" pour ce participant ?`)) {
+            // Supprimer aussi les assignations liées à cette activité
+            participants[pIdx].items.forEach(item => {
+                delete item.assignments[actName];
+            });
+            participants[pIdx].activities.splice(actIdx, 1);
+            saveData(); render();
+        }
+    }
+
+    function moveActivity(pIdx, actIdx, direction) {
+        const activities = participants[pIdx].activities;
+        const newIdx = actIdx + direction;
+        if (newIdx >= 0 && newIdx < activities.length) {
+            const temp = activities[actIdx];
+            activities[actIdx] = activities[newIdx];
+            activities[newIdx] = temp;
+            saveData(); render();
+        }
+    }
+
+    // --- Actions Matériel ---
+    function addItem(pIdx) {
+        const name = prompt("Nom du matériel ?");
+        if (name) { participants[pIdx].items.push({ id: crypto.randomUUID(), name, assignments: {} }); saveData(); render(); }
+    }
+
+    function removeItem(pIdx, iIdx) {
+        if(confirm(`Supprimer ce matériel ?`)) { participants[pIdx].items.splice(iIdx, 1); saveData(); render(); }
+    }
+
+    function toggleAssignment(pIdx, iIdx, act) {
+        const item = participants[pIdx].items[iIdx];
+        if (item.assignments[act]) delete item.assignments[act];
+        else item.assignments[act] = [];
+        saveData(); render();
+    }
+
+    function addTime(pIdx, iIdx, act) {
+        participants[pIdx].items[iIdx].assignments[act].push("12:00");
+        saveData(); render();
+    }
+
+    function updateTime(pIdx, iIdx, act, tIdx, val) {
+        participants[pIdx].items[iIdx].assignments[act][tIdx] = val;
+        saveData();
+    }
+
+    function removeTime(pIdx, iIdx, act, tIdx) {
+        participants[pIdx].items[iIdx].assignments[act].splice(tIdx, 1);
+        saveData(); render();
+    }
+
+    // --- Notifications ---
+    function showInternalAlert(msg) {
+        document.getElementById('alert-msg').innerText = msg;
+        document.getElementById('internal-alert').classList.remove('hidden');
+    }
+    function closeAlert() { document.getElementById('internal-alert').classList.add('hidden'); }
+
+    // --- Rendu ---
+    function render() {
+        const container = document.getElementById('participants-container');
+        container.innerHTML = '';
+
+        participants.forEach((p, pIdx) => {
+            const card = document.createElement('div');
+            card.className = "bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden";
+            
+            card.innerHTML = `
+                <div class="bg-slate-800 p-4 flex justify-between items-center text-white">
+                    <h2 class="text-xl font-bold flex items-center gap-2"><i data-lucide="user"></i> ${p.name}</h2>
+                    <div class="flex gap-2">
+                        <button onclick="addActivity(${pIdx})" class="text-[10px] uppercase font-bold bg-blue-600 px-3 py-1.5 rounded-lg hover:bg-blue-500 transition-colors">+ Activité</button>
+                        <button onclick="removeParticipant(${pIdx})" class="text-red-400 hover:bg-red-500/20 p-1 rounded transition-colors"><i data-lucide="trash-2" size="20"></i></button>
+                    </div>
+                </div>
+                <div class="p-4 overflow-x-auto">
+                    <table class="w-full text-left min-w-[700px]">
+                        <thead>
+                            <tr class="text-slate-400 text-[10px] uppercase tracking-widest">
+                                <th class="pb-4 pl-2 w-48">Matériel</th>
+                                ${p.activities.map((a, aIdx) => `
+                                    <th class="pb-4 px-2">
+                                        <div class="flex flex-col items-center gap-1 group/act">
+                                            <div class="flex items-center gap-1 opacity-0 group-hover/act:opacity-100 transition-opacity">
+                                                <button onclick="moveActivity(${pIdx}, ${aIdx}, -1)" class="p-1 hover:text-blue-500"><i data-lucide="chevron-left" size="14"></i></button>
+                                                <button onclick="removeActivity(${pIdx}, ${aIdx})" class="p-1 hover:text-red-500"><i data-lucide="trash" size="12"></i></button>
+                                                <button onclick="moveActivity(${pIdx}, ${aIdx}, 1)" class="p-1 hover:text-blue-500"><i data-lucide="chevron-right" size="14"></i></button>
+                                            </div>
+                                            <span class="text-slate-700 text-xs font-bold text-center block w-full truncate" title="${a}">${a}</span>
+                                        </div>
+                                    </th>
+                                `).join('')}
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            ${p.items.map((item, iIdx) => `
+                                <tr class="group hover:bg-slate-50/50 transition-colors">
+                                    <td class="py-4 font-semibold text-slate-700 pr-4">
+                                        <div class="flex items-center justify-between group/name">
+                                            <span class="truncate max-w-[140px]">${item.name}</span>
+                                            <button onclick="removeItem(${pIdx}, ${iIdx})" class="text-red-300 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-all">
+                                                <i data-lucide="x-circle" size="16"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                    ${p.activities.map(act => {
+                                        const isActive = item.assignments[act] !== undefined;
+                                        const times = item.assignments[act] || [];
+                                        return `
+                                            <td class="py-4 px-2">
+                                                <div class="flex flex-col items-center gap-2">
+                                                    <button onclick="toggleAssignment(${pIdx}, ${iIdx}, '${act}')" 
+                                                        class="w-9 h-9 rounded-xl flex items-center justify-center transition-all ${isActive ? 'bg-emerald-500 text-white shadow-md' : 'bg-slate-100 text-slate-300 hover:bg-slate-200'}">
+                                                        <i data-lucide="${isActive ? 'check' : 'plus'}" size="18"></i>
+                                                    </button>
+                                                    ${isActive ? `
+                                                        <div class="space-y-1.5 w-full max-w-[90px]">
+                                                            ${times.map((t, tIdx) => `
+                                                                <div class="flex items-center bg-white border border-slate-200 rounded-lg px-1 py-0.5 shadow-sm">
+                                                                    <input type="time" value="${t}" onchange="updateTime(${pIdx}, ${iIdx}, '${act}', ${tIdx}, this.value)" class="bg-transparent w-full text-[11px] font-medium outline-none">
+                                                                    <button onclick="removeTime(${pIdx}, ${iIdx}, '${act}', ${tIdx})" class="text-slate-300 hover:text-red-500"><i data-lucide="x" size="12"></i></button>
+                                                                </div>
+                                                            `).join('')}
+                                                            <button onclick="addTime(${pIdx}, ${iIdx}, '${act}')" class="w-full text-[10px] text-blue-600 font-bold hover:underline">+ HEURE</button>
+                                                        </div>
+                                                    ` : ''}
+                                                </div>
+                                            </td>
+                                        `;
+                                    }).join('')}
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                    <button onclick="addItem(${pIdx})" class="mt-6 w-full py-3 border-2 border-dashed border-slate-200 rounded-2xl text-slate-400 hover:border-blue-400 hover:text-blue-500 hover:bg-blue-50/30 transition-all font-bold flex items-center justify-center gap-2 uppercase tracking-wide">
+                        <i data-lucide="plus-circle" size="20"></i> Ajouter un matériel
+                    </button>
+                </div>
+            `;
+            container.appendChild(card);
+        });
+        lucide.createIcons();
+    }
+
+    function requestNotificationPermission() {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        Notification.requestPermission().then(perm => { if (perm === "granted") document.getElementById('btn-notif').classList.add('hidden'); });
+    }
+
+    window.onload = render;
+</script>
+</body>
+</html>
